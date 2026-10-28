@@ -30,8 +30,9 @@ public abstract class DomainException extends RuntimeException {
     public String title() {
         return title;
     }
+  
+      /** Extra fields the ticket names for this refusal (none by default). */
 
-    /** Extra fields for this refusal's answer (none for NoSuchProperty or NoSuchRoom). */
     public Map<String, Object> properties() {
         return Map.of();
     }

@@ -46,11 +46,11 @@ return new BoardView(property, count(shown, RoomState.ready), count(shown, RoomS
     }
 
     /**
-     * Derived on every read. Out of order overrides all; otherwise a room is occupied - stays, the first rows a
-     * state is read off, come with checkout.
+     * Derived on every read. Out of order overrides all; a room is occupied while its latest stay has no checkout and
+     * dirty once it has.
      */
     private static RoomView view(RoomRepository.Row row) {
-        RoomState state = row.outOfOrder() ? RoomState.out_of_order : RoomState.occupied;
+        RoomState state = row.outOfOrder() ? RoomState.out_of_order : row.checkedOutAt() == null ? RoomState.occupied : RoomState.dirty;
         return new RoomView(row.no(), row.floor(), row.type(), state, null, null);
     }
 

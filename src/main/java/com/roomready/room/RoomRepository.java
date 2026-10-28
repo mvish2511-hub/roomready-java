@@ -1,5 +1,6 @@
 package com.roomready.room;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -10,11 +11,14 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class RoomRepository {
 
-    /** One rooms row. */
-    public record Row(String no, int floor, RoomType type, boolean outOfOrder) {
+    /** One rooms row, with the checkout of its latest stay (null while the guest is in). */
+    public record Row(String no, int floor, RoomType type, boolean outOfOrder, Instant checkedOutAt) {
     }
 
-    private static final String SELECT = "SELECT no, floor, type, out_of_order FROM rooms WHERE property_id = ?";
+    private static final String SELECT = """
+      SELECT r.no, r.floor, r.type, r.out_of_order, s.checked_out_at FROM rooms r
+      LEFT JOIN stays s ON s.id = (SELECT MAX(id) FROM stays WHERE room_id = r.id)
+      WHERE r.property_id = ?""";
 
     private final JdbcClient jdbc;
 
@@ -24,11 +28,11 @@ public class RoomRepository {
 
     /** Every room of a property, by number. */
     public List<Row> all(long propertyId) {
-        return jdbc.sql(SELECT + " ORDER BY no").param(propertyId).query(Row.class).list();
+        return jdbc.sql(SELECT + " ORDER BY r.no").param(propertyId).query(Row.class).list();
     }
 
     public Optional<Row> one(long propertyId, String no) {
-        return jdbc.sql(SELECT + " AND no = ?").params(propertyId, no).query(Row.class).optional();
+        return jdbc.sql(SELECT + " AND r.no = ?").params(propertyId, no).query(Row.class).optional();
     }
 
     public void insert(long propertyId, String no, int floor, RoomType type) {

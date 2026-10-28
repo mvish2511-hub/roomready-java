@@ -22,3 +22,15 @@ CREATE TABLE IF NOT EXISTS housekeepers (
     property_id BIGINT      NOT NULL REFERENCES properties (id),
     name        VARCHAR(60) NOT NULL
 );
+
+-- A guest's stay. The current stay of a room is its latest; it is open while checked_out_at is null. The next
+-- guest's arrival, when the desk knows it, is kept for the readiness margin.
+CREATE TABLE IF NOT EXISTS stays (
+    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    property_id    BIGINT                   NOT NULL REFERENCES properties (id),
+    room_id        BIGINT                   NOT NULL REFERENCES rooms (id),
+    guest_ref      VARCHAR(20)              NOT NULL,
+    checked_in_at  TIMESTAMP WITH TIME ZONE NOT NULL,
+    checked_out_at TIMESTAMP WITH TIME ZONE,
+    arrival_at     TIMESTAMP WITH TIME ZONE
+);
