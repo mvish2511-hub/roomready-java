@@ -34,3 +34,16 @@ CREATE TABLE IF NOT EXISTS stays (
     checked_out_at TIMESTAMP WITH TIME ZONE,
     arrival_at     TIMESTAMP WITH TIME ZONE
 );
+
+-- Who cleans a room after a stay, and the clean's stamps. clean_minutes is stamped once, at finish.
+CREATE TABLE IF NOT EXISTS assignments (
+    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    property_id    BIGINT                   NOT NULL REFERENCES properties (id),
+    room_id        BIGINT                   NOT NULL REFERENCES rooms (id),
+    stay_id        BIGINT                   NOT NULL REFERENCES stays (id),
+    housekeeper_id VARCHAR(8)               NOT NULL REFERENCES housekeepers (id),
+    assigned_at    TIMESTAMP WITH TIME ZONE NOT NULL,
+    started_at     TIMESTAMP WITH TIME ZONE,
+    finished_at    TIMESTAMP WITH TIME ZONE,
+    clean_minutes  INT
+);

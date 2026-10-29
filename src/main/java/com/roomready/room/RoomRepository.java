@@ -11,14 +11,23 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class RoomRepository {
 
-    /** One rooms row, with the checkout of its latest stay (null while the guest is in). */
-    public record Row(String no, int floor, RoomType type, boolean outOfOrder, Instant checkedOutAt) {
+    /** 
+     * One rooms row, with the checkout of its latest stay (null while the guest is in) and that stay's latest
+     * assignment: who has it and its three stamps (all null when there is none).
+     */
+    public record Row(String no, int floor, RoomType type, boolean outOfOrder, Instant checkedOutAt,
+                      String housekeeperId, String assignedTo, Instant assignedAt, Instant startedAt,
+                      Instant finishedAt)  {
     }
 
     private static final String SELECT = """
-      SELECT r.no, r.floor, r.type, r.out_of_order, s.checked_out_at FROM rooms r
-      LEFT JOIN stays s ON s.id = (SELECT MAX(id) FROM stays WHERE room_id = r.id)
-      WHERE r.property_id = ?""";
+            SELECT r.no, r.floor, r.type, r.out_of_order, s.checked_out_at, a.housekeeper_id, h.name AS assigned_to,
+                   a.assigned_at, a.started_at, a.finished_at
+            FROM rooms r
+            LEFT JOIN stays s ON s.id = (SELECT MAX(id) FROM stays WHERE room_id = r.id)
+            LEFT JOIN assignments a ON a.id = (SELECT MAX(id) FROM assignments WHERE stay_id = s.id)
+            LEFT JOIN housekeepers h ON h.id = a.housekeeper_id
+            WHERE r.property_id = ?""";
 
     private final JdbcClient jdbc;
 
