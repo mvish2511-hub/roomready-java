@@ -18,6 +18,10 @@ public class AssignmentRepository {
     public record Row(long id, String room, Instant startedAt) {
     }
 
+    /** The latest assignment of a room's current stay, with who cleaned it. */
+    public record Latest(long id, String housekeeperId, String cleanedBy) {
+    }
+
     private final JdbcClient jdbc;
 
     public AssignmentRepository(JdbcClient jdbc) {
@@ -44,7 +48,22 @@ public class AssignmentRepository {
                         FROM assignments a
                         JOIN rooms r ON r.id = a.room_id
                         WHERE a.property_id = ? AND a.id = ?""")
-                .params(propertyId, id).query(Row.class).optional();
+                .params(propertyId, id)
+                .query(Row.class)
+                .optional();
+    }
+
+    public Optional<Latest> latest(long propertyId, String room) {
+        return jdbc.sql("""
+                        SELECT a.id, a.housekeeper_id, h.name AS cleaned_by
+                        FROM assignments a
+                        JOIN housekeepers h ON h.id = a.housekeeper_id
+                        WHERE a.id = (SELECT MAX(a2.id) FROM assignments a2 JOIN rooms r ON r.id = a2.room_id
+                                      WHERE a2.property_id = ? AND r.no = ?)
+                        """)
+                .params(propertyId, room)
+                .query(Latest.class)
+                .optional();
     }
 
     public void start(long id, Instant at) {

@@ -47,3 +47,14 @@ CREATE TABLE IF NOT EXISTS assignments (
     finished_at    TIMESTAMP WITH TIME ZONE,
     clean_minutes  INT
 );
+
+-- An inspection of a clean. A failed one closes the assignment: the room is dirty again.
+CREATE TABLE IF NOT EXISTS inspections (
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    property_id   BIGINT                   NOT NULL REFERENCES properties (id),
+    room_id       BIGINT                   NOT NULL REFERENCES rooms (id),
+    assignment_id BIGINT                   NOT NULL REFERENCES assignments (id),
+    inspector_id  VARCHAR(8)               NOT NULL REFERENCES housekeepers (id),
+    result        VARCHAR(4)               NOT NULL,
+    inspected_at  TIMESTAMP WITH TIME ZONE NOT NULL
+);

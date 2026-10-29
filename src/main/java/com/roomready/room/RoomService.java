@@ -3,9 +3,8 @@ package com.roomready.room;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
@@ -13,7 +12,8 @@ import com.roomready.error.NoSuchProperty;
 import com.roomready.error.NoSuchRoom;
 
 /**
- * The board: every room with its state, derived from its rows on every read; and the housekeepers.
+ * Reads the room board and individual rooms. The state is derived from the current stay and the latest
+ * assignment, so the board always reflects the workflow.
  */
 @Service
 public class RoomService {
@@ -23,8 +23,8 @@ public class RoomService {
     private final HousekeeperRepository housekeepers;
     private final Clock clock;
 
-    public RoomService(PropertyRepository properties, RoomRepository rooms, HousekeeperRepository housekeepers,
-                       Clock clock) {
+    public RoomService(PropertyRepository properties, RoomRepository rooms,
+                       HousekeeperRepository housekeepers, Clock clock) {
         this.properties = properties;
         this.rooms = rooms;
         this.housekeepers = housekeepers;
@@ -32,73 +32,94 @@ public class RoomService {
     }
 
     public BoardView board(String property, Integer floor, RoomState state, RoomType type) {
-        List<RoomView> shown = rooms.all(propertyId(property)).stream()
+        long propertyId = propertyId(property);
+        List<RoomView> views = rooms.all(propertyId).stream()
                 .map(this::view)
                 .filter(r -> floor == null || r.floor() == floor)
                 .filter(r -> state == null || r.state() == state)
                 .filter(r -> type == null || r.type() == type)
                 .toList();
-        return new BoardView(property, count(shown, RoomState.ready), count(shown, RoomState.dirty), shown);
+
+        List<RoomView> all = rooms.all(propertyId).stream().map(this::view).toList();
+        int ready = (int) all.stream().filter(r -> r.state() == RoomState.ready).count();
+        int dirty = (int) all.stream().filter(r -> r.state() == RoomState.dirty).count();
+
+        return new BoardView(property, ready, dirty, views);
     }
 
     public RoomView room(String property, String no) {
-        return view(rooms.one(propertyId(property), no).orElseThrow(() -> new NoSuchRoom(property, no)));
+        long propertyId = propertyId(property);
+        return rooms.one(propertyId, no)
+                .map(this::view)
+                .orElseThrow(() -> new NoSuchRoom(property, no));
     }
 
-    private long propertyId(String property) {
-        return properties.idOf(property).orElseThrow(() -> new NoSuchProperty(property));
+    public HousekeepersView housekeepers(String property) {
+        long propertyId = propertyId(property);
+        List<HousekeeperView> views = housekeepers.all(propertyId).stream()
+                .map(h -> new HousekeeperView(h.id(), h.name(), openAssignment(propertyId, h.id())))
+                .toList();
+        return new HousekeepersView(views);
+    }
+
+    private String openAssignment(long propertyId, String housekeeperId) {
+        return rooms.all(propertyId).stream()
+                .filter(r -> housekeeperId.equals(r.housekeeperId()))
+                .filter(r -> view(r).assignedTo() != null)
+                .map(RoomRepository.Row::no)
+                .findFirst()
+                .orElse(null);
     }
 
     /**
-     * Derived on every read. Out of order overrides all; a room is occupied while its latest stay has no checkout,
-     * dirty once it has, and then assigned, cleaning or to inspect by the stamps of that stay's assignment - which,
-     * while it is open, also gives who is on the room and for how many minutes it has been in this state.
+     * Derives the room's current state and, where relevant, while it is open, also gives who is on the room and for how many minutes it has been in this state. A failed
+     * inspection closes the assignment: the room is dirty again until the next one.
      */
-     
     private RoomView view(RoomRepository.Row row) {
         RoomState state = state(row);
-        Instant since = switch (state) {
-            case assigned -> row.assignedAt();
-            case cleaning -> row.startedAt();
-            case toinspect -> row.finishedAt();
-            default -> null;
-        };
-        if (since == null) {
-            return new RoomView(row.no(), row.floor(), row.type(), state, null, null);
+        String assignedTo = null;
+        Integer sinceMinutes = null;
+
+        if (state == RoomState.assigned || state == RoomState.cleaning || state == RoomState.toinspect) {
+            assignedTo = row.assignedTo();
+            Instant since = switch (state) {
+                case assigned -> row.assignedAt();
+                case cleaning -> row.startedAt();
+                case toinspect -> row.finishedAt();
+                default -> null;
+            };
+            if (since != null) {
+                sinceMinutes = (int) Duration.between(since, now()).toMinutes();
+            }
         }
-        return new RoomView(row.no(), row.floor(), row.type(), state, row.assignedTo(),
-                (int) Duration.between(since, clock.instant()).toMinutes());
+
+        return new RoomView(row.no(), row.floor(), row.type(), state, assignedTo, sinceMinutes);
     }
 
-    private static RoomState state(RoomRepository.Row row) {
+    private RoomState state(RoomRepository.Row row) {
         if (row.outOfOrder()) {
             return RoomState.out_of_order;
         }
         if (row.checkedOutAt() == null) {
             return RoomState.occupied;
         }
-        if (row.assignedAt() == null) {
+        if (row.assignedAt() == null || row.failed()) {
             return RoomState.dirty;
         }
         if (row.startedAt() == null) {
             return RoomState.assigned;
         }
-        return row.finishedAt() == null ? RoomState.cleaning : RoomState.toinspect;
+        if (row.finishedAt() == null) {
+            return RoomState.cleaning;
+        }
+        return RoomState.toinspect;
     }
 
-    private static int count(List<RoomView> shown, RoomState state) {
-        return (int) shown.stream().filter(r -> r.state() == state).count();
+    private Instant now() {
+        return clock.instant().truncatedTo(ChronoUnit.SECONDS);
     }
 
-    /**
-     * Every housekeeper, with the room of the open assignment they hold (a room assigned, cleaning or to inspect).
-     */
-    public HousekeepersView housekeepers(String property) {
-        long propertyId = propertyId(property);
-        Map<String, String> open = rooms.all(propertyId).stream()
-                .filter(r -> r.housekeeperId() != null && view(r).assignedTo() != null)
-                .collect(Collectors.toMap(RoomRepository.Row::housekeeperId, RoomRepository.Row::no));
-        return new HousekeepersView(housekeepers.all(propertyId).stream()
-                .map(h -> new HousekeeperView(h.id(), h.name(), open.get(h.id()))).toList());
+    private long propertyId(String property) {
+        return properties.idOf(property).orElseThrow(() -> new NoSuchProperty(property));
     }
 }
