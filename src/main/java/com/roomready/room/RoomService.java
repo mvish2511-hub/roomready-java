@@ -106,6 +106,11 @@ public class RoomService {
         if (row.assignedAt() == null || row.failed()) {
             return RoomState.dirty;
         }
+        
+        if (row.passed()) {
+            return RoomState.ready;
+        }
+        
         if (row.startedAt() == null) {
             return RoomState.assigned;
         }

@@ -18,15 +18,31 @@ public class InspectionRepository {
     }
 
     /** An inspection of this assignment's clean; its database id. */
-    public long insert(long propertyId, String room, long assignmentId, String inspectorId, Result result,
+    public long insert(long propertyId,
+                       String room,
+                       long assignmentId,
+                       String inspectorId,
+                       Result result,
                        Instant inspectedAt) {
+
         KeyHolder key = new GeneratedKeyHolder();
+
         jdbc.sql("""
-                 INSERT INTO inspections (property_id, room_id, assignment_id, inspector_id, result,
-                 inspected_at)
-                 SELECT ?, id, ?, ?, ?, ? FROM rooms WHERE property_id = ? AND no = ?""")
-                .params(propertyId, assignmentId, inspectorId, result.name(), inspectedAt, propertyId, room)
+                 INSERT INTO inspections
+                 (property_id, room_id, assignment_id, inspector_id, result, inspected_at)
+                 SELECT ?, id, ?, ?, ?, ?
+                 FROM rooms
+                 WHERE property_id = ? AND no = ?
+                 """)
+                .params(propertyId,
+                        assignmentId,
+                        inspectorId,
+                        result.name(),
+                        inspectedAt,
+                        propertyId,
+                        room)
                 .update(key, "id");
+
         return key.getKeyAs(Long.class);
     }
 }

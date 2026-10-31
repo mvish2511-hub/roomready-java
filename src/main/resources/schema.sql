@@ -58,3 +58,13 @@ CREATE TABLE IF NOT EXISTS inspections (
     result        VARCHAR(4)               NOT NULL,
     inspected_at  TIMESTAMP WITH TIME ZONE NOT NULL
 );
+
+-- A room passed inspection - when it was ready, when its next guest was due, and the margin between (negative
+-- when late; null when no arrival was known). Stamped once, in the same transaction as the inspection.
+CREATE TABLE IF NOT EXISTS room_readiness (
+    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    room_id        BIGINT                   NOT NULL REFERENCES rooms (id),
+    ready_at       TIMESTAMP WITH TIME ZONE NOT NULL,
+    arrival_at     TIMESTAMP WITH TIME ZONE,
+    margin_minutes INT
+);

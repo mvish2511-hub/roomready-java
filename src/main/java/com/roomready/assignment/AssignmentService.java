@@ -56,13 +56,13 @@ public class AssignmentService {
         }
 
         need(room, view.state(), RoomState.dirty);
-        long stayId = stays.current(propertyId, room).orElseThrow().id();
+        long stayId = stays.latest(propertyId, room).orElseThrow().id();
         Instant now = now();
         long id = assignments.insert(propertyId, room, stayId, who.id(), now);
         return new AssignResponse(AssignmentIds.format(id), room, who.name(), now);
     }
 
-public StartResponse start(String property, String assignmentId) {
+    public StartResponse start(String property, String assignmentId) {
         AssignmentRepository.Row a = assignment(property, assignmentId);
         need(a.room(), rooms.room(property, a.room()).state(), RoomState.assigned);
         Instant now = now();
@@ -70,7 +70,9 @@ public StartResponse start(String property, String assignmentId) {
         return new StartResponse(assignmentId, now);
     }
 
-    /** The clean's length, finished - started in whole minutes, is stamped here once and never recomputed. */
+    /**
+     * The clean's length, finished - started in whole minutes, is stamped here once and never recomputed.
+     */
     public FinishResponse finish(String property, String assignmentId) {
         AssignmentRepository.Row a = assignment(property, assignmentId);
         need(a.room(), rooms.room(property, a.room()).state(), RoomState.cleaning);
@@ -86,7 +88,7 @@ public StartResponse start(String property, String assignmentId) {
         }
     }
 
-private AssignmentRepository.Row assignment(String property, String assignmentId) {
+    private AssignmentRepository.Row assignment(String property, String assignmentId) {
         long propertyId = propertyId(property);
         return AssignmentIds.parse(assignmentId).flatMap(id -> assignments.find(propertyId, id))
                 .orElseThrow(() -> new NoSuchAssignment(assignmentId));
@@ -97,6 +99,6 @@ private AssignmentRepository.Row assignment(String property, String assignmentId
     }
 
     private long propertyId(String property) {
-        return properties.idOf(property).orElseThrow();                     // the one property is seeded at start-up
+        return properties.idOf(property).orElseThrow(); // the one property is seeded at start-up
     }
 }

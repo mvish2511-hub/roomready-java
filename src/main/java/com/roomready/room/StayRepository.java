@@ -10,9 +10,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class StayRepository {
 
-    /** A room's latest stay. */
-    public record Row(long id, Instant checkedInAt, Instant checkedOutAt) {
+        /** A room's latest stay, with the next guest's arrival when the desk typed it in. */
+    public record Row(long id, Instant checkedInAt, Instant checkedOutAt, Instant arrivalAt) {
     }
+
 
     private final JdbcClient jdbc;
 
@@ -21,11 +22,28 @@ public class StayRepository {
     }
 
     public Optional<Row> current(long propertyId, String roomNo) {
-        return jdbc.sql( """
-                      SELECT s.id, s.checked_in_at, s.checked_out_at FROM stays s JOIN rooms r ON r.id = s.room_id
-                      WHERE s.property_id = ? AND r.no = ? ORDER BY s.id DESC LIMIT 1""")
-                .params(propertyId, roomNo).query(Row.class).optional();
+        return jdbc.sql("""
+                        SELECT s.id, s.checked_in_at, s.checked_out_at, s.arrival_at
+                        FROM stays s JOIN rooms r ON r.id = s.room_id
+                        WHERE s.property_id = ? AND r.no = ? AND s.checked_out_at IS NULL
+                        ORDER BY s.id DESC LIMIT 1""")
+                .params(propertyId, roomNo)
+                .query(Row.class)
+                .optional();
     }
+    public Optional<Row> latest(long propertyId, String roomNo) {
+    return jdbc.sql("""
+            SELECT s.id, s.checked_in_at, s.checked_out_at, s.arrival_at
+            FROM stays s
+            JOIN rooms r ON r.id = s.room_id
+            WHERE s.property_id = ? AND r.no = ?
+            ORDER BY s.id DESC
+            LIMIT 1
+            """)
+            .params(propertyId, roomNo)
+            .query(Row.class)
+            .optional();
+}
 
 public boolean none(long propertyId) {
         return jdbc.sql("SELECT count(*) FROM stays WHERE property_id = ?").param(propertyId).query(Long.class)

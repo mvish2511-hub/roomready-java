@@ -1,106 +1,53 @@
 package com.roomready.error;
 
-import java.net.URI;
-import java.util.List;
 import java.util.Map;
 
-import com.fasterxml.jackson.databind.JsonMappingException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.TypeMismatchException;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.context.request.WebRequest;
-import org.springframework.web.method.annotation.HandlerMethodValidationException;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
- * The one place that turns errors into a ProblemDetail (application/problem+json). The base class already answers
- * Spring's own errors - an unknown path, a wrong method - as ProblemDetails; this adds the domain refusals and the
- * requests that are not valid: a bad query value, a body that fails Bean Validation, a body Jackson cannot read.
+ * Turns domain refusals and malformed requests into ProblemDetails: a stable type and safe detail for the caller,
+ * with extra properties where useful. Validation errors and a body Jackson cannot read -
+ * and anything else that goes wrong.
  */
 @RestControllerAdvice
-public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+public class ApiExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @ExceptionHandler(DomainException.class)
     public ProblemDetail refusal(DomainException e) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatusCode.valueOf(e.status()), e.getMessage());
-        problem.setType(URI.create(e.type()));
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+        org.springframework.http.HttpStatusCode.valueOf(e.status()), e.getMessage());
+        problem.setType(java.net.URI.create(e.type()));
         problem.setTitle(e.title());
         e.properties().forEach(problem::setProperty);
         return problem;
     }
 
-    /** A query value that does not fit its type - ?state=painting, ?floor=x - is 400 /errors/validation. */
-    @Override
-    protected ResponseEntity<Object> handleTypeMismatch(
-            TypeMismatchException ex, HttpHeaders headers,
-            HttpStatusCode status, WebRequest request) {
-        String field = ex instanceof MethodArgumentTypeMismatchException m ? m.getName() : ex.getPropertyName();
-        return handleExceptionInternal(ex, validation(List.of(error(field,
-                "'" + ex.getValue() + "' is not an allowed value"))),
-                headers, HttpStatus.BAD_REQUEST, request);
-    }
-
     /**
-     * A body that fails Bean Validation (@NotBlank, @NotNull): 400 naming every field.
+     * Anything else is a 500 ProblemDetail too (every error is one), with a generic detail - never the
+     * exception's message - and the exception in the log.
      */
-    @Override
-    protected ResponseEntity<Object> handleMethodArgumentNotValid(
-            MethodArgumentNotValidException ex,
-                                                                  HttpHeaders headers, HttpStatusCode status,
-                                                                  WebRequest request) {
-        List<Map<String, String>> errors = ex.getBindingResult().getFieldErrors().stream()
-                .map(f -> error(f.getField(), String.valueOf(f.getDefaultMessage()))).toList();
-        return handleExceptionInternal(ex, validation(errors), headers, HttpStatus.BAD_REQUEST, request);
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail unexpected(Exception e) {
+        log.error("unexpected error", e);
+        return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong on our side");
     }
 
-    /**
-     * A body Jackson cannot read - {"at": "yesterday"} fails before Bean Validation ever runs - is still 400
-     * /errors/validation, naming the field Jackson stopped at.
-     */
-    @Override
-    protected ResponseEntity<Object> handleHttpMessageNotReadable(
-            HttpMessageNotReadableException ex,
-                                                                  HttpHeaders headers, HttpStatusCode status,
-                                                                  WebRequest request) {
-        String field = "body";
-        if (ex.getCause() instanceof JsonMappingException json && !json.getPath().isEmpty()) {
-            field = json.getPath().get(json.getPath().size() - 1).getFieldName();
-        }
-        return handleExceptionInternal(
-                ex, validation(List.of(error(field, "this value cannot be read"))), headers,
-                HttpStatus.BAD_REQUEST, request);
-    }
-
-    /** A query value outside its range - ?floor=9 against @Min(1) @Max(4) - is 400 /errors/validation too. */
-    @Override
-    protected ResponseEntity<Object> handleHandlerMethodValidationException(
-            HandlerMethodValidationException ex,
-            HttpHeaders headers, HttpStatusCode status,
-            WebRequest request) {
-        var invalid = ex.getParameterValidationResults().get(0);
-        String field = invalid.getMethodParameter().getParameterName();
-        return handleExceptionInternal(ex, validation(List.of(error(field, String.valueOf(
-                invalid.getResolvableErrors().get(0).getDefaultMessage())))),
-                headers, HttpStatus.BAD_REQUEST, request);
-    }
-
-    private static Map<String, String> error(String field, String message) {
-        return Map.of("field", String.valueOf(field), "message", message);
-    }
-
-    private static ProblemDetail validation(List<Map<String, String>> errors) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "The request is not valid");
-        problem.setType(URI.create("/errors/validation"));
+    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class,
+            TypeMismatchException.class})
+    public ProblemDetail badRequest(Exception e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "The request is invalid");
+        problem.setType(java.net.URI.create("/errors/invalid-request"));
         problem.setTitle("Invalid request");
-        problem.setProperty("errors", errors);
         return problem;
     }
 }
