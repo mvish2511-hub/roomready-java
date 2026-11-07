@@ -2,12 +2,15 @@ package com.roomready.checkout;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.roomready.error.InvalidRequest;
 import com.roomready.error.NoSuchRoom;
 import com.roomready.error.RoomNotOccupied;
+import com.roomready.room.EventLog;
 import com.roomready.room.PropertyRepository;
 import com.roomready.room.RoomRepository;
 import com.roomready.room.RoomState;
@@ -21,34 +24,65 @@ public class CheckoutService {
     private final PropertyRepository properties;
     private final RoomRepository rooms;
     private final StayRepository stays;
+    private final EventLog events;
     private final Clock clock;
 
-    public CheckoutService(PropertyRepository properties, RoomRepository rooms, StayRepository stays, Clock clock) {
+    public CheckoutService(
+            PropertyRepository properties,
+            RoomRepository rooms,
+            StayRepository stays,
+            EventLog events,
+            Clock clock) {
         this.properties = properties;
         this.rooms = rooms;
         this.stays = stays;
+        this.events = events;
         this.clock = clock;
     }
 
     /**
      * The room must exist; the times are checked against the clock and the stay (each a validation error naming its
      * field); a room whose latest stay is already checked out has no guest to check out.
+     * The stay and its event are
+     * one transaction.
      */
-    public CheckoutResponse checkout(String property, String room, Instant at, Instant arrivalAt) {
-        long propertyId = properties.idOf(property).orElseThrow();   // the one property is seeded at start-up
+    @Transactional
+    public CheckoutResponse checkout(
+            String property, String room, Instant at, Instant arrivalAt) {
+
+        long propertyId = properties.idOf(property).orElseThrow();
         rooms.one(propertyId, room).orElseThrow(() -> new NoSuchRoom(property, room));
+
         if (at.isAfter(clock.instant())) {
             throw new InvalidRequest("at", "must not be in the future");
         }
+
         if (arrivalAt != null && arrivalAt.isBefore(at)) {
             throw new InvalidRequest("arrivalAt", "must not be before the checkout");
         }
-        StayRepository.Row stay = stays.current(propertyId, room).filter(s -> s.checkedOutAt() == null)
+
+        StayRepository.Row stay = stays.current(propertyId, room)
+                .filter(s -> s.checkedOutAt() == null)
                 .orElseThrow(() -> new RoomNotOccupied(room));
+
         if (at.isBefore(stay.checkedInAt())) {
-            throw new InvalidRequest("at", "must not be before check-in at " + stay.checkedInAt());
+            throw new InvalidRequest(
+                    "at", "must not be before check-in at " + stay.checkedInAt());
         }
+
         stays.checkOut(stay.id(), at, arrivalAt);
-        return new CheckoutResponse(StayIds.format(stay.id()), room, at, RoomState.dirty);
+
+        events.append(
+                propertyId,
+                room,
+                stay.id(),
+                null,
+                "checked_out",
+                at,
+                EventLog.FRONT_DESK,
+                Map.of());
+
+        return new CheckoutResponse(
+                StayIds.format(stay.id()), room, at, RoomState.dirty);
     }
 }

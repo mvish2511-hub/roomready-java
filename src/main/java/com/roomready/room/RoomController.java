@@ -9,7 +9,9 @@ import org.springframework.web.bind.annotation.RestController;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 
-/** The board, one room and the housekeepers. Parses the request and delegates; no rules live here. */
+/**
+ * The board, one room and the housekeepers. Parses the request and delegates; no rules live here.
+ */
 @RestController
 @RequestMapping("/properties/{property}")
 public class RoomController {
@@ -31,6 +33,12 @@ public class RoomController {
     @GetMapping("/rooms/{no}")
     public RoomView room(@PathVariable String property, @PathVariable String no) {
         return rooms.room(property, no);
+    }
+
+    @GetMapping("/rooms/{no}/history")
+    public HistoryView history(@PathVariable String property, @PathVariable String no,
+                               @RequestParam(required = false) String stay) {
+        return rooms.history(property, no, stay);
     }
 
     @GetMapping("/housekeepers")

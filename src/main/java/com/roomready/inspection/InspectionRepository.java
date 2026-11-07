@@ -7,7 +7,6 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** The inspections table. */
 @Repository
 public class InspectionRepository {
 
@@ -17,24 +16,25 @@ public class InspectionRepository {
         this.jdbc = jdbc;
     }
 
-    /** An inspection of this assignment's clean; its database id. */
-    public long insert(long propertyId,
-                       String room,
-                       long assignmentId,
-                       String inspectorId,
-                       Result result,
-                       Instant inspectedAt) {
+    public long insert(
+            long propertyId,
+            String room,
+            long assignmentId,
+            String inspectorId,
+            Result result,
+            Instant inspectedAt) {
 
         KeyHolder key = new GeneratedKeyHolder();
 
-        jdbc.sql("""
-                 INSERT INTO inspections
-                 (property_id, room_id, assignment_id, inspector_id, result, inspected_at)
-                 SELECT ?, id, ?, ?, ?, ?
-                 FROM rooms
-                 WHERE property_id = ? AND no = ?
-                 """)
-                .params(propertyId,
+        int inserted = jdbc.sql("""
+                INSERT INTO inspections
+                (property_id, room_id, assignment_id, inspector_id, result, inspected_at)
+                SELECT ?, id, ?, ?, ?, ?
+                FROM rooms
+                WHERE property_id = ? AND no = ?
+                """)
+                .params(
+                        propertyId,
                         assignmentId,
                         inspectorId,
                         result.name(),
@@ -43,6 +43,11 @@ public class InspectionRepository {
                         room)
                 .update(key, "id");
 
-        return key.getKeyAs(Long.class);
+        if (inserted != 1 || key.getKey() == null) {
+            throw new IllegalStateException(
+                    "Inspection could not be inserted for room " + room);
+        }
+
+        return ((Number) key.getKey()).longValue();
     }
 }

@@ -68,3 +68,17 @@ CREATE TABLE IF NOT EXISTS room_readiness (
     arrival_at     TIMESTAMP WITH TIME ZONE,
     margin_minutes INT
 );
+
+-- The append-only log of every transition. The app only inserts and reads it (EventLog has nothing else);
+-- actor_id says who did it; data holds the event's facts as JSON - ids and numbers, never the guest.
+CREATE TABLE IF NOT EXISTS events (
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    property_id   BIGINT NOT NULL REFERENCES properties(id),
+    room_id       BIGINT NOT NULL REFERENCES rooms(id),
+    stay_id       BIGINT NOT NULL REFERENCES stays(id),
+    assignment_id BIGINT REFERENCES assignments(id),
+    kind          VARCHAR(12) NOT NULL,
+    at            TIMESTAMP WITH TIME ZONE NOT NULL,
+    actor_id      VARCHAR(20) NOT NULL,
+    data          VARCHAR(2000) NOT NULL
+);

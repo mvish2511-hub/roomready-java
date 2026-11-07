@@ -21,13 +21,22 @@ public class RoomService {
     private final PropertyRepository properties;
     private final RoomRepository rooms;
     private final HousekeeperRepository housekeepers;
+    private final StayRepository stays;
+    private final EventLog events;
     private final Clock clock;
 
-    public RoomService(PropertyRepository properties, RoomRepository rooms,
-                       HousekeeperRepository housekeepers, Clock clock) {
+    public RoomService(
+            PropertyRepository properties,
+            RoomRepository rooms,
+            HousekeeperRepository housekeepers,
+            StayRepository stays,
+            EventLog events,
+            Clock clock) {
         this.properties = properties;
         this.rooms = rooms;
         this.housekeepers = housekeepers;
+        this.stays = stays;
+        this.events = events;
         this.clock = clock;
     }
 
@@ -53,6 +62,23 @@ public class RoomService {
                 .map(this::view)
                 .orElseThrow(() -> new NoSuchRoom(property, no));
     }
+
+    /**
+     * A room's day: the events of one stay - by default the current one. A stay that is not this room's, or not a
+     * stay at all, has no events here.
+     */
+    public HistoryView history(String property, String no, String stay) {
+    long propertyId = propertyId(property);
+    room(property, no);
+
+    long stayId = stay == null
+        ? stays.latest(propertyId, no)
+                .map(StayRepository.Row::id)
+                .orElse(0L)
+        : StayIds.parse(stay).orElse(0L);
+
+    return new HistoryView(no, events.forStay(propertyId, no, stayId));
+}
 
     public HousekeepersView housekeepers(String property) {
         long propertyId = propertyId(property);
@@ -106,11 +132,11 @@ public class RoomService {
         if (row.assignedAt() == null || row.failed()) {
             return RoomState.dirty;
         }
-        
+
         if (row.passed()) {
             return RoomState.ready;
         }
-        
+
         if (row.startedAt() == null) {
             return RoomState.assigned;
         }

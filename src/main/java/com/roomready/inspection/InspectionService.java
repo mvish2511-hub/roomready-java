@@ -4,6 +4,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,6 +14,7 @@ import com.roomready.assignment.AssignmentRepository;
 import com.roomready.error.NoSuchHousekeeper;
 import com.roomready.error.SelfInspection;
 import com.roomready.error.StepSkipped;
+import com.roomready.room.EventLog;
 import com.roomready.room.HousekeeperRepository;
 import com.roomready.room.PropertyRepository;
 import com.roomready.room.RoomService;
@@ -28,6 +31,7 @@ public class InspectionService {
     private final InspectionRepository inspections;
     private final ReadinessRepository readiness;
     private final StayRepository stays;
+    private final EventLog events;
     private final Clock clock;
 
     public InspectionService(
@@ -38,7 +42,9 @@ public class InspectionService {
             InspectionRepository inspections,
             ReadinessRepository readiness,
             StayRepository stays,
+            EventLog events,
             Clock clock) {
+
         this.properties = properties;
         this.rooms = rooms;
         this.housekeepers = housekeepers;
@@ -46,9 +52,10 @@ public class InspectionService {
         this.inspections = inspections;
         this.readiness = readiness;
         this.stays = stays;
+        this.events = events;
         this.clock = clock;
     }
-    
+
     @Transactional
     public InspectionResponse inspect(
             String property, String room, String inspector, Result result) {
@@ -56,6 +63,7 @@ public class InspectionService {
         long propertyId = properties.idOf(property).orElseThrow();
 
         RoomState state = rooms.room(property, room).state();
+
         if (state != RoomState.toinspect) {
             throw new StepSkipped(room, state.name(), state.needs());
         }
@@ -72,10 +80,28 @@ public class InspectionService {
 
         Instant now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
 
+        StayRepository.Row stay =
+                stays.latest(propertyId, room).orElseThrow();
+
         long id = inspections.insert(
                 propertyId, room, clean.id(), who.id(), result, now);
 
+        Map<String, Object> facts = new HashMap<>();
+        facts.put("inspector", who.id());
+        facts.put("result", result.name());
+
         if (result == Result.fail) {
+
+            events.append(
+                    propertyId,
+                    room,
+                    stay.id(),
+                    clean.id(),
+                    "inspected",
+                    now,
+                    who.id(),
+                    facts);
+
             return new InspectionResponse(
                     InspectionIds.format(id),
                     room,
@@ -88,15 +114,26 @@ public class InspectionService {
                     null);
         }
 
-        Instant arrivalAt = stays.latest(propertyId, room)
-        .map(StayRepository.Row::arrivalAt)
-        .orElse(null);
+        Instant arrivalAt = stay.arrivalAt();
 
         Integer margin = arrivalAt == null
                 ? null
                 : (int) Duration.between(now, arrivalAt).toMinutes();
 
         readiness.insert(propertyId, room, now, arrivalAt, margin);
+
+        facts.put("marginMinutes", margin);
+        facts.put("arrivalAt", arrivalAt);
+
+        events.append(
+                propertyId,
+                room,
+                stay.id(),
+                clean.id(),
+                "inspected",
+                now,
+                who.id(),
+                facts);
 
         return new InspectionResponse(
                 InspectionIds.format(id),
