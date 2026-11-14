@@ -4,15 +4,18 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.roomready.config.RoomReadySettings;
 import com.roomready.error.AlreadyAssigned;
 import com.roomready.error.NoSuchAssignment;
 import com.roomready.error.NoSuchHousekeeper;
 import com.roomready.error.StepSkipped;
+import com.roomready.inspection.ReadinessService;
 import com.roomready.room.EventLog;
 import com.roomready.room.HousekeeperRepository;
 import com.roomready.room.PropertyRepository;
@@ -35,17 +38,23 @@ public class AssignmentService {
     private final StayRepository stays;
     private final AssignmentRepository assignments;
     private final EventLog events;
+    private final ReadinessService readiness;
+    private final RoomReadySettings settings;
     private final Clock clock;
 
     public AssignmentService(
             PropertyRepository properties, RoomService rooms, HousekeeperRepository housekeepers,
-            StayRepository stays, AssignmentRepository assignments, EventLog events, Clock clock) {
+            StayRepository stays, AssignmentRepository assignments, EventLog events,
+            ReadinessService readiness, RoomReadySettings settings, Clock clock) {
+
         this.properties = properties;
         this.rooms = rooms;
         this.housekeepers = housekeepers;
         this.stays = stays;
         this.assignments = assignments;
         this.events = events;
+        this.readiness = readiness;
+        this.settings = settings;
         this.clock = clock;
     }
 
@@ -85,21 +94,41 @@ public class AssignmentService {
     }
 
     /**
-     * The clean's length, finished - started in whole minutes, is stamped here once and never recomputed.
+     * The clean's length, finished - started in whole minutes, is stamped here once and never recomputed. A room whose
+     * type needs no inspection is ready now: its readiness is stamped with the finish, in the same transaction.
      */
     @Transactional
     public FinishResponse finish(String property, String assignmentId) {
-        AssignmentRepository.Row a = assignment(property, assignmentId);
-        need(a.room(), rooms.room(property, a.room()).state(), RoomState.cleaning);
-        Instant now = now();
-        int cleanMinutes = (int) Duration.between(a.startedAt(), now).toMinutes();
-        assignments.finish(a.id(), now, cleanMinutes);
+    AssignmentRepository.Row a = assignment(property, assignmentId);
+    RoomView view = rooms.room(property, a.room());
+    need(a.room(), view.state(), RoomState.cleaning);
+
+    Instant now = now();
+    int cleanMinutes = (int) Duration.between(a.startedAt(), now).toMinutes();
+    assignments.finish(a.id(), now, cleanMinutes);
+
+    long propertyId = propertyId(property);
+
+    events.append(
+            propertyId, a.room(), a.stayId(), a.id(), "finished", now, a.housekeeperId(),
+            Map.of("cleanMinutes", cleanMinutes));
+
+    if (!settings.inspectionRequiredFor().contains(view.type())) {
+        Map<String, Object> facts = new HashMap<>();
+
+        Instant arrivalAt = stays.latest(propertyId, a.room())
+                .orElseThrow()
+                .arrivalAt();
+
+        readiness.stamp(
+                propertyId, a.room(), now, arrivalAt, facts);
+
         events.append(
-                propertyId(property), a.room(), a.stayId(), a.id(), "finished", now, a.housekeeperId(),
-                Map.of("cleanMinutes", cleanMinutes));
-        return new FinishResponse(assignmentId, now, cleanMinutes);
+                propertyId, a.room(), a.stayId(), a.id(), "ready", now, a.housekeeperId(), facts);
     }
 
+    return new FinishResponse(assignmentId, now, cleanMinutes);
+}
     private static void need(String room, RoomState state, RoomState needed) {
         if (state != needed) {
             throw new StepSkipped(room, state.name(), state.needs());

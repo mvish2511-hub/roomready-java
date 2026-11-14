@@ -1,7 +1,6 @@
 package com.roomready.inspection;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
@@ -29,7 +28,7 @@ public class InspectionService {
     private final HousekeeperRepository housekeepers;
     private final AssignmentRepository assignments;
     private final InspectionRepository inspections;
-    private final ReadinessRepository readiness;
+    private final ReadinessService readiness;
     private final StayRepository stays;
     private final EventLog events;
     private final Clock clock;
@@ -40,7 +39,7 @@ public class InspectionService {
             HousekeeperRepository housekeepers,
             AssignmentRepository assignments,
             InspectionRepository inspections,
-            ReadinessRepository readiness,
+            ReadinessService readiness,
             StayRepository stays,
             EventLog events,
             Clock clock) {
@@ -116,14 +115,9 @@ public class InspectionService {
 
         Instant arrivalAt = stay.arrivalAt();
 
-        Integer margin = arrivalAt == null
-                ? null
-                : (int) Duration.between(now, arrivalAt).toMinutes();
-
-        readiness.insert(propertyId, room, now, arrivalAt, margin);
-
-        facts.put("marginMinutes", margin);
-        facts.put("arrivalAt", arrivalAt);
+        Integer margin = result == Result.pass
+                ? readiness.stamp(propertyId, room, now, stay.arrivalAt(), facts)
+                : null;
 
         events.append(
                 propertyId,
@@ -146,4 +140,5 @@ public class InspectionService {
                 arrivalAt,
                 margin);
     }
+
 }

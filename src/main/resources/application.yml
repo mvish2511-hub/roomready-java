@@ -12,3 +12,5 @@ server:
   port: 8080
 
 seed-dir: seed
+inspection-required-for: Standard,Deluxe,Suite
+stall-after-minutes: 60

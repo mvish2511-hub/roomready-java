@@ -1,3 +1,4 @@
+
 package com.roomready.room;
 
 import java.time.Clock;
@@ -8,6 +9,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.roomready.config.RoomReadySettings;
 import com.roomready.error.NoSuchProperty;
 import com.roomready.error.NoSuchRoom;
 
@@ -23,6 +25,7 @@ public class RoomService {
     private final HousekeeperRepository housekeepers;
     private final StayRepository stays;
     private final EventLog events;
+    private final RoomReadySettings settings;
     private final Clock clock;
 
     public RoomService(
@@ -31,12 +34,14 @@ public class RoomService {
             HousekeeperRepository housekeepers,
             StayRepository stays,
             EventLog events,
+            RoomReadySettings settings,
             Clock clock) {
         this.properties = properties;
         this.rooms = rooms;
         this.housekeepers = housekeepers;
         this.stays = stays;
         this.events = events;
+        this.settings = settings;
         this.clock = clock;
     }
 
@@ -68,17 +73,17 @@ public class RoomService {
      * stay at all, has no events here.
      */
     public HistoryView history(String property, String no, String stay) {
-    long propertyId = propertyId(property);
-    room(property, no);
+        long propertyId = propertyId(property);
+        room(property, no);
 
-    long stayId = stay == null
-        ? stays.latest(propertyId, no)
-                .map(StayRepository.Row::id)
-                .orElse(0L)
-        : StayIds.parse(stay).orElse(0L);
+        long stayId = stay == null
+                ? stays.latest(propertyId, no)
+                        .map(StayRepository.Row::id)
+                        .orElse(0L)
+                : StayIds.parse(stay).orElse(0L);
 
-    return new HistoryView(no, events.forStay(propertyId, no, stayId));
-}
+        return new HistoryView(no, events.forStay(propertyId, no, stayId));
+    }
 
     public HousekeepersView housekeepers(String property) {
         long propertyId = propertyId(property);
@@ -99,7 +104,8 @@ public class RoomService {
 
     /**
      * Derives the room's current state and, where relevant, while it is open, also gives who is on the room and for how many minutes it has been in this state. A failed
-     * inspection closes the assignment: the room is dirty again until the next one.
+     * inspection closes the assignment: the room is dirty again until the next one. A room whose type needs no inspection is ready as soon as its clean is
+     * finished.
      */
     private RoomView view(RoomRepository.Row row) {
         RoomState state = state(row);
@@ -143,7 +149,9 @@ public class RoomService {
         if (row.finishedAt() == null) {
             return RoomState.cleaning;
         }
-        return RoomState.toinspect;
+
+        return settings.inspectionRequiredFor().contains(row.type())
+                ? RoomState.toinspect : RoomState.ready;
     }
 
     private Instant now() {

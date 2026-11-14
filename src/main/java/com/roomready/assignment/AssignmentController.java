@@ -65,18 +65,20 @@ public class AssignmentController {
     }
 
     @PostMapping("/assignments/{assignmentId}/finish")
-    @Operation(summary = "Finish the clean: its minutes are stamped and the room waits for inspection")
+    @Operation(
+            summary = "Finish the clean: its minutes are stamped; the room waits for inspection, or is ready at "
+                    + "once when its type needs none")
     @ApiResponse(responseCode = "200", description = "Finished")
     @ApiResponse(
             responseCode = "404", description = "No such assignment",
             content = @Content(mediaType = ProblemExamples.PROBLEM, examples = @ExampleObject(
                     name = "no-such-assignment",
                     value = ProblemExamples.NO_SUCH_ASSIGNMENT_FINISH)))
-        @ApiResponse(
+    @ApiResponse(
             responseCode = "409", description = "The room is not being cleaned",
             content = @Content(mediaType = ProblemExamples.PROBLEM, examples = @ExampleObject(
                     name = "step-skipped", value = ProblemExamples.STEP_SKIPPED_FINISH)))
-        public FinishResponse finish(@PathVariable String assignmentId) {
+    public FinishResponse finish(@PathVariable String assignmentId) {
         return assignments.finish(PROPERTY, assignmentId);
     }
 }
