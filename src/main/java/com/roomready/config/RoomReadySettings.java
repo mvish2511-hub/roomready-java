@@ -8,8 +8,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 import com.roomready.room.RoomType;
 
 /**
- * The app's own settings, read once at start-up from application.yml. Spring's own settings - the database
- * URL, the host and the port - stay under spring.datasource and server. 
+ * The app's own settings, read once at start-up: application.yml gives the defaults, and an environment
+ * variable overrides each one. Spring's own settings - the database URL, the host and the port - stay under
+ * spring.datasource and server. 
  
  * @param seedDir the folder that holds rooms.csv and housekeepers.csv
  * @param inspectionRequiredFor  the room types a finished clean must be inspected for; the others are ready

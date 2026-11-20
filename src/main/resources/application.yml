@@ -1,15 +1,18 @@
+# Every setting can come from the environment: an env-file passed to `docker run --env-file` is the only
+# configuration input. DATABASE_URL, HOST and PORT are mapped here; INSPECTION_REQUIRED_FOR and
+# STALL_AFTER_MINUTES bind to inspection-required-for and stall-after-minutes through Spring's relaxed binding.
 spring:
   application:
     name: roomready
   datasource:
-    url: jdbc:h2:file:./data/roomready
+    url: ${DATABASE_URL:jdbc:h2:file:./data/roomready}
   sql:
     init:
       mode: always
 
 server:
-  address: 127.0.0.1
-  port: 8080
+  address: ${HOST:127.0.0.1}
+  port: ${PORT:8080}
 
 seed-dir: seed
 inspection-required-for: Standard,Deluxe,Suite

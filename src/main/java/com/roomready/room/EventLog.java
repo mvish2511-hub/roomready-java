@@ -4,6 +4,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.simple.JdbcClient;
+
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -12,9 +16,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * Append-only event log.
- * Events can be inserted and read, but never updated or deleted.
+ * Append-only event log facts are ids and numbers, never the guest.
+ * Every event also leaves one log line on stdout - its kind, the room, who, and its facts.
  */
+
 @Repository
 public class EventLog {
 
@@ -23,6 +28,8 @@ public class EventLog {
 
     private record Row(Instant at, String kind, String data) {
     }
+
+    private static final Logger log = LoggerFactory.getLogger("com.roomready.events");
 
     private final JdbcClient jdbc;
     private final ObjectMapper json;
@@ -65,6 +72,8 @@ public class EventLog {
                         propertyId,
                         room)
                 .update();
+                log.info("event kind={} room={} actor={} facts={}", kind, room, actorId, facts);
+
 
         if (inserted != 1) {
             throw new IllegalStateException(
